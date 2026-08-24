@@ -1,4 +1,4 @@
-"""
+﻿"""
 Google Drive Integration Module for lofi lope YouTube Automation
 Fetches:
 1. Video Loops (MP4/MOV/MKV) from GOOGLE_DRIVE_VIDEO_FOLDER_ID
@@ -9,7 +9,7 @@ Supports:
 - Priority for new unpublished lofi tracks
 - Infinite circulation mode (Weighted Least-Recently-Used selection)
 - Dynamic remixing across video, audio, and thumbnail permutations
-- Local directory fallback
+- Seamless fallback between Google Drive and local directories
 """
 import os
 import io
@@ -141,6 +141,7 @@ def fetch_assets_triplet(allow_repost=True):
     """
     Fetches ONE video, ONE audio track, and ONE thumbnail image for lofi lope.
     Supports Infinite Circulation Mode with Weighted Least-Recently-Used selection.
+    Intelligently combines Google Drive and local assets.
     """
     script_dir = os.path.dirname(os.path.abspath(__file__))
     vid_dir = os.path.join(script_dir, LOCAL_VIDEO_DIR)
@@ -152,77 +153,99 @@ def fetch_assets_triplet(allow_repost=True):
     os.makedirs(img_dir, exist_ok=True)
 
     drive_service = get_drive_service()
-    drive_ready = (drive_service is not None) and bool(GOOGLE_DRIVE_AUDIO_FOLDER_ID)
+    drive_ready = (drive_service is not None)
 
-    if drive_ready:
-        print("[DRIVE] Querying Google Drive folders for lofi lope...")
-        v_files = list_files_in_folder(GOOGLE_DRIVE_VIDEO_FOLDER_ID, extensions=['.mp4', '.mov', '.mkv'])
+    # 1. Gather Audio (Drive -> fallback Local)
+    a_files = []
+    if drive_ready and GOOGLE_DRIVE_AUDIO_FOLDER_ID:
+        print("[DRIVE] Checking Google Drive Audio folder...")
         a_files = list_files_in_folder(GOOGLE_DRIVE_AUDIO_FOLDER_ID, extensions=['.mp3', '.wav', '.flac'])
-        i_files = list_files_in_folder(GOOGLE_DRIVE_IMAGE_FOLDER_ID, extensions=['.jpg', '.jpeg', '.png', '.webp'])
-
-        if v_files and a_files:
-            repost_counts = get_repost_counts()
-            unpublished = [f for f in a_files if f['name'].strip().lower() not in repost_counts]
-            
-            if unpublished:
-                # Phase 1: Pick unpublished audio first
-                sel_audio = unpublished[0]
-                sel_video = v_files[len(repost_counts) % len(v_files)]
-                sel_image = i_files[len(repost_counts) % len(i_files)] if i_files else None
-                is_repost = False
-                print(f"[PIPELINE] New Lofi Track Found: {sel_audio['name']}")
-            elif allow_repost:
-                # Phase 2: Infinite Circulation - Weighted Random Selection
-                weights = [max(1, 1000 // (3 ** min(repost_counts.get(f['name'].strip().lower(), 0), 6))) for f in a_files]
-                sel_audio = random.choices(a_files, weights=weights, k=1)[0]
-                sel_video = random.choice(v_files)
-                sel_image = random.choice(i_files) if i_files else None
-                is_repost = True
-                prev_c = repost_counts.get(sel_audio['name'].strip().lower(), 0)
-                print(f"[PIPELINE] Infinite Circulation: Selected {sel_audio['name']} (published {prev_c} times before).")
-            else:
-                print("[INFO] All tracks published and repost is disabled.")
-                return None, None, None, False
-
-            v_dest = os.path.join(vid_dir, sel_video['name'])
-            a_dest = os.path.join(aud_dir, sel_audio['name'])
-            i_dest = os.path.join(img_dir, sel_image['name']) if sel_image else None
-
-            if not os.path.exists(v_dest):
-                print(f"[DRIVE] Downloading video: {sel_video['name']}...")
-                download_file(sel_video['id'], v_dest)
-            if not os.path.exists(a_dest):
-                print(f"[DRIVE] Downloading audio: {sel_audio['name']}...")
-                download_file(sel_audio['id'], a_dest)
-            if i_dest and not os.path.exists(i_dest):
-                print(f"[DRIVE] Downloading image: {sel_image['name']}...")
-                download_file(sel_image['id'], i_dest)
-
-            return v_dest, a_dest, i_dest, is_repost
-
-    # Local files fallback
-    print("[PIPELINE] Using local input folders...")
-    local_vids = sorted(glob.glob(os.path.join(vid_dir, "*.mp4")) + glob.glob(os.path.join(vid_dir, "*.mov")) + glob.glob(os.path.join(vid_dir, "*.mkv")))
+    
     local_auds = sorted(glob.glob(os.path.join(aud_dir, "*.mp3")) + glob.glob(os.path.join(aud_dir, "*.wav")) + glob.glob(os.path.join(aud_dir, "*.flac")))
+
+    # 2. Gather Video (Drive -> fallback Local)
+    v_files = []
+    if drive_ready and GOOGLE_DRIVE_VIDEO_FOLDER_ID:
+        print("[DRIVE] Checking Google Drive Video folder...")
+        v_files = list_files_in_folder(GOOGLE_DRIVE_VIDEO_FOLDER_ID, extensions=['.mp4', '.mov', '.mkv'])
+    
+    local_vids = sorted(glob.glob(os.path.join(vid_dir, "*.mp4")) + glob.glob(os.path.join(vid_dir, "*.mov")) + glob.glob(os.path.join(vid_dir, "*.mkv")))
+
+    # 3. Gather Image (Drive -> fallback Local)
+    i_files = []
+    if drive_ready and GOOGLE_DRIVE_IMAGE_FOLDER_ID:
+        print("[DRIVE] Checking Google Drive Image folder...")
+        i_files = list_files_in_folder(GOOGLE_DRIVE_IMAGE_FOLDER_ID, extensions=['.jpg', '.jpeg', '.png', '.webp'])
+    
     local_imgs = sorted(glob.glob(os.path.join(img_dir, "*.jpg")) + glob.glob(os.path.join(img_dir, "*.png")) + glob.glob(os.path.join(img_dir, "*.jpeg")) + glob.glob(os.path.join(img_dir, "*.webp")))
 
-    if not local_vids or not local_auds:
-        return None, None, None, False
-
+    # --- Select Audio ---
     repost_counts = get_repost_counts()
-    unpublished = [f for f in local_auds if os.path.basename(f).strip().lower() not in repost_counts]
-    if unpublished:
-        sel_aud = unpublished[0]
-        sel_vid = local_vids[len(repost_counts) % len(local_vids)]
-        sel_img = local_imgs[len(repost_counts) % len(local_imgs)] if local_imgs else None
-        is_repost = False
-    elif allow_repost:
-        weights = [max(1, 1000 // (3 ** min(repost_counts.get(os.path.basename(f).strip().lower(), 0), 6))) for f in local_auds]
-        sel_aud = random.choices(local_auds, weights=weights, k=1)[0]
-        sel_vid = random.choice(local_vids)
-        sel_img = random.choice(local_imgs) if local_imgs else None
-        is_repost = True
-    else:
+    sel_audio_path = None
+    is_repost = False
+
+    if a_files:
+        unpublished_drive = [f for f in a_files if f['name'].strip().lower() not in repost_counts]
+        if unpublished_drive:
+            sel_a = unpublished_drive[0]
+            is_repost = False
+            print(f"[PIPELINE] New Lofi Track on Drive: {sel_a['name']}")
+        elif allow_repost:
+            weights = [max(1, 1000 // (3 ** min(repost_counts.get(f['name'].strip().lower(), 0), 6))) for f in a_files]
+            sel_a = random.choices(a_files, weights=weights, k=1)[0]
+            is_repost = True
+            prev_c = repost_counts.get(sel_a['name'].strip().lower(), 0)
+            print(f"[PIPELINE] Infinite Circulation: Selected {sel_a['name']} (published {prev_c} times before).")
+        else:
+            sel_a = None
+
+        if sel_a:
+            a_dest = os.path.join(aud_dir, sel_a['name'])
+            if not os.path.exists(a_dest):
+                print(f"[DRIVE] Downloading audio from Drive: {sel_a['name']}...")
+                download_file(sel_a['id'], a_dest)
+            sel_audio_path = a_dest
+    
+    if not sel_audio_path and local_auds:
+        unpublished_local = [f for f in local_auds if os.path.basename(f).strip().lower() not in repost_counts]
+        if unpublished_local:
+            sel_audio_path = unpublished_local[0]
+            is_repost = False
+        elif allow_repost:
+            weights = [max(1, 1000 // (3 ** min(repost_counts.get(os.path.basename(f).strip().lower(), 0), 6))) for f in local_auds]
+            sel_audio_path = random.choices(local_auds, weights=weights, k=1)[0]
+            is_repost = True
+
+    if not sel_audio_path:
+        print("[ERROR] No audio files found in Google Drive or local input_audio folder.")
         return None, None, None, False
 
-    return sel_vid, sel_aud, sel_img, is_repost
+    # --- Select Video ---
+    sel_video_path = None
+    if v_files:
+        sel_v = v_files[len(repost_counts) % len(v_files)]
+        v_dest = os.path.join(vid_dir, sel_v['name'])
+        if not os.path.exists(v_dest):
+            print(f"[DRIVE] Downloading video from Drive: {sel_v['name']}...")
+            download_file(sel_v['id'], v_dest)
+        sel_video_path = v_dest
+    elif local_vids:
+        sel_video_path = local_vids[len(repost_counts) % len(local_vids)]
+
+    if not sel_video_path:
+        print("[ERROR] No video files found in Google Drive or local input_videos folder.")
+        return None, None, None, False
+
+    # --- Select Image ---
+    sel_image_path = None
+    if i_files:
+        sel_i = i_files[len(repost_counts) % len(i_files)]
+        i_dest = os.path.join(img_dir, sel_i['name'])
+        if not os.path.exists(i_dest):
+            print(f"[DRIVE] Downloading image from Drive: {sel_i['name']}...")
+            download_file(sel_i['id'], i_dest)
+        sel_image_path = i_dest
+    elif local_imgs:
+        sel_image_path = local_imgs[len(repost_counts) % len(local_imgs)]
+
+    return sel_video_path, sel_audio_path, sel_image_path, is_repost
