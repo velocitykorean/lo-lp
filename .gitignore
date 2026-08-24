@@ -1,0 +1,27 @@
+# Environment variables & secrets
+.env
+service_account.json
+*.pem
+*.key
+
+# Output media & temp
+temp_*.mp4
+output_videos/
+output_thumbnails/
+input_videos/*.mp4
+input_videos/*.mov
+input_videos/*.mkv
+input_audio/*.mp3
+input_audio/*.wav
+input_audio/*.flac
+input_images/*.jpg
+input_images/*.jpeg
+input_images/*.png
+input_images/*.webp
+
+# Python & IDE
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+*.log
