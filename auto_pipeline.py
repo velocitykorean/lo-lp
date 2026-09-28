@@ -166,20 +166,31 @@ def run_pipeline(duration=3600, dry_run=False):
         save_published_entry(vid_path, aud_path, img_path, yt_video_id=None, title=title)
         return True
         
-    # Optional Step 5: Upload to YouTube if publish_youtube exists
+    # Step 5: Upload to Platforms (YouTube & Facebook)
+    video_id = None
     try:
         from publish_youtube import upload_to_youtube, set_video_thumbnail
         print(f"\n[STEP 5] Uploading to YouTube...")
         video_id = upload_to_youtube(final_video_path, title, desc, tags=tags)
         if video_id:
             set_video_thumbnail(video_id, thumb_output)
-            save_published_entry(vid_path, aud_path, img_path, yt_video_id=video_id, title=title)
             print(f"🎉 SUCCESS! Published to YouTube: https://youtu.be/{video_id}")
-            return True
     except Exception as e:
         print(f"[YOUTUBE NOTE] YouTube API upload skipped or not configured ({e}). Video is ready in output_videos/")
-        save_published_entry(vid_path, aud_path, img_path, yt_video_id=None, title=title)
-        return True
+
+    # Facebook Page Upload
+    fb_video_id = None
+    try:
+        from publish_facebook import upload_to_facebook
+        print(f"\n[facebook] Uploading to Facebook Page Lofi Lope...")
+        fb_res = upload_to_facebook(final_video_path, title, desc)
+        fb_video_id = fb_res.get("id")
+        print(f"🎉 SUCCESS! Published to Facebook: {fb_video_id}")
+    except Exception as e_fb:
+        print(f"[FACEBOOK NOTE] Facebook upload skipped or encountered error: {e_fb}")
+
+    save_published_entry(vid_path, aud_path, img_path, yt_video_id=video_id, title=title)
+    return True
 
 if __name__ == "__main__":
     dur = 3600
