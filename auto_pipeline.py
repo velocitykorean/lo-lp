@@ -39,14 +39,17 @@ def get_published_history():
             return []
     return []
 
-def save_published_entry(video_name, audio_name, image_name, yt_video_id=None, title=""):
+def save_published_entry(video_name, audio_name, image_name, yt_video_id=None, fb_video_id=None, title=""):
     history = get_published_history()
+    page_id = (os.getenv('FB_PAGE_ID') or os.getenv('FACEBOOK_PAGE_ID') or os.getenv('LOFI_LOPE_FB_PAGE_ID', '')).strip()
     entry = {
         "video_file": os.path.basename(video_name),
         "audio_file": os.path.basename(audio_name),
         "image_file": os.path.basename(image_name) if image_name else "",
         "youtube_id": yt_video_id,
         "youtube_url": f"https://youtu.be/{yt_video_id}" if yt_video_id else "LOCAL_RENDER",
+        "facebook_id": fb_video_id,
+        "facebook_url": f"https://www.facebook.com/{page_id}/videos/{fb_video_id}" if (fb_video_id and page_id) else (f"https://www.facebook.com/videos/{fb_video_id}" if fb_video_id else None),
         "title": title,
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
@@ -193,7 +196,7 @@ def run_pipeline(duration=3600, dry_run=False):
     except Exception as e_fb:
         print(f"[FACEBOOK NOTE] Facebook upload skipped or encountered error: {e_fb}")
 
-    save_published_entry(vid_path, aud_path, img_path, yt_video_id=video_id, title=title)
+    save_published_entry(vid_path, aud_path, img_path, yt_video_id=video_id, fb_video_id=fb_video_id, title=title)
     return True
 
 if __name__ == "__main__":
